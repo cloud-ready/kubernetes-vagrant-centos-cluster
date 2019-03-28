@@ -2,3 +2,7 @@
 .DS_Store
 *.tar.gz
 kubernetes
+
+/get_helm.sh
+*.iml
+k8s_cluster.yml
