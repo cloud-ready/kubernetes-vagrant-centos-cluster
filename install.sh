@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+# git clean -fdx; :/ -e kubernetes-vagrant-centos-cluster.iml
+# wget https://storage.googleapis.com/kubernetes-release/release/v1.11.0/kubernetes-server-linux-amd64.tar.gz -P ./
+# tar -xzvf kubernetes-server-linux-amd64.tar.gz --no-same-owner -C ./
 # ./install.sh "3" "1" "172.17.8.101" "node1=http://172.17.8.101:2380"
 # ./install.sh "3" "3" "172.17.8.103" "node1=http://172.17.8.101:2380"
 
@@ -15,8 +18,10 @@ mv /etc/yum.repos.d/CentOS7-Base-163.repo /etc/yum.repos.d/CentOS-Base.repo
 kubernetes_release="/vagrant/kubernetes-server-linux-amd64.tar.gz"
 # Download Kubernetes
 if [[ $(hostname) == "node1" ]] && [[ ! -f "$kubernetes_release" ]]; then
-    wget https://storage.googleapis.com/kubernetes-release/release/v1.11.0/kubernetes-server-linux-amd64.tar.gz -P /vagrant/
+    #wget https://storage.googleapis.com/kubernetes-release/release/v1.11.0/kubernetes-server-linux-amd64.tar.gz -P /vagrant/
+    wget https://storage.googleapis.com/kubernetes-release/release/v1.13.4/kubernetes-server-linux-amd64.tar.gz -P /vagrant/
 fi
+tar -xzvf /vagrant/kubernetes-server-linux-amd64.tar.gz --no-same-owner -C /vagrant
 
 ## enable ntp to sync time
 #echo 'sync time'
@@ -66,7 +71,8 @@ cat /etc/resolv.conf
 
 cat > /etc/docker/daemon.json <<EOF
 {
-  "registry-mirrors" : ["http://2595fda0.m.daocloud.io"]
+  "registry-mirrors" : ["http://2595fda0.m.daocloud.io"],
+  "exec-opts": ["native.cgroupdriver=systemd"]
 }
 EOF
 
@@ -131,14 +137,13 @@ systemctl enable docker
 systemctl start docker
 
 echo "copy pem, token files"
-mkdir -p /etc/kubernetes/ssl
-cp /vagrant/pki/* /etc/kubernetes/ssl/
+mkdir -p /etc/kubernetes/pki
+cp /vagrant/pki/* /etc/kubernetes/pki/
 cp /vagrant/conf/token.csv /etc/kubernetes/
 cp /vagrant/conf/bootstrap.kubeconfig /etc/kubernetes/
 cp /vagrant/conf/kube-proxy.kubeconfig /etc/kubernetes/
 cp /vagrant/conf/kubelet.kubeconfig /etc/kubernetes/
 
-tar -xzvf /vagrant/kubernetes-server-linux-amd64.tar.gz --no-same-owner -C /vagrant
 if [[ ! -f /usr/bin/kubectl ]]; then cp /vagrant/kubernetes/server/bin/* /usr/bin; fi
 
 dos2unix -q /vagrant/systemd/*.service
@@ -242,10 +247,27 @@ echo "Configure Kubectl to autocomplete"
 source <(kubectl completion bash) # setup autocomplete in bash into the current shell, bash-completion package should be installed first.
 echo "source <(kubectl completion bash)" >> ~/.bashrc # add autocomplete permanently to your bash shell.
 
+# for 1.13.4 replace all '/etc/kubernetes/ssl' to '/etc/kubernetes/pki'
+# kubectl get nodes
+# kubectl get csr
+#
 # kubectl get pods -o wide --all-namespaces
 # kubectl get namespaces
 # kubectl -n kube-system get pods
+# kubectl -n kube-system describe pods coredns-f5cf6c6fd-pdz2w
+#
 # kubectl -n default get pods
+#
+# systemctl status kubelet -l
+# journalctl -f -u kubelet
+#
+# docker info | grep 'Cgroup Driver'
+# systemctl restart docker
+# systemctl status docker
+#
+#
+# systemctl status flanneld -l
+# cat /run/flannel/docker
 
 #cd /vagrant/addon/consul
 #./consul-deploy.sh "172.17.8.101,172.17.8.102" "dev" "consul" "8.8.8.8"
@@ -254,3 +276,8 @@ echo "source <(kubectl completion bash)" >> ~/.bashrc # add autocomplete permane
 #kubectl create -f addon/rook/rook-operator.yaml
 #until kubectl get crd clusters.rook.io; do echo "Waiting for Cluster CRD ..."; sleep 5; done
 #kubectl create -f addon/rook/rook-cluster.yaml
+
+EnvironmentFile=/run/flannel/docker ExecStart=/usr/bin/dockerd -H fd:// $DOCKER_NETWORK_OPTIONS
+systemctl daemon-reload
+systemctl restart docker
+systemctl status docker
